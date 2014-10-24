@@ -1,0 +1,73 @@
+# Predicting Exercise Classification With Accelerometer Data
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. This analysis uses accelerometer data collected by [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) to predict the exercise classification of weight lifting exercises.
+### Set options
+```{r set-options}
+opts_chunk$set(message = FALSE, warning = FALSE)
+```
+### Load required libraries
+```{r}
+require(caret)
+require(randomForest)
+```
+## Load the training and test data sets
+```{r}
+train.raw <- read.csv("data/pml-training.csv")
+test.raw <- read.csv("data/pml-testing.csv")
+
+```
+## Data cleanup
+The training data set has 19622 observations of 160 variables. Exploration of the data set shows that there are many columns with missing data (all columns with missing data total 19216 observations). These columns will be filtered from the training set. 
+```{r}
+train <- train.raw[, !sapply(train.raw, function(x) any(is.na(x)))]
+```
+In addition, columns with low or near zero variance are are removed as predictors using the nearZeroVar function in the Caret package.
+```{r}
+lowVar <- nearZeroVar(train)
+train <- train[-lowVar]
+```
+Finally, the predictor columns are restricted to numeric types. User and timestamp related columns are removed, leaving only accelerometer observations and the exercise classification outcome. 
+```{r}
+train <- train[, sapply(train, function(x) is.numeric(x) | is.factor(x))]
+remove_cols <-  c("X","user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp",
+                  "num_window")
+train <- train[ , -which(names(train) %in% remove_cols)]
+```
+## Fit Model
+First split the supplied training data into training and test sets for validation.
+```{r}
+set.seed(123)
+inTraining <- createDataPartition(train$classe, p = 0.75, list = FALSE)
+training <- train[inTraining, ]
+testing <- train[-inTraining, ]
+```
+Build model using random forest to predict the outcome.
+```{r}
+modFit <- randomForest(classe ~ ., training, ntree=1000)
+```
+## Validation
+Review the importance of the predictor variables for the fitted model:
+```{r}
+varImpPlot(modFit, sort = TRUE, main = "Random Forest Variable Importance")
+```
+Assess performance of the model on the test set using the confusionMatrix function.
+```{r}
+prediction <- predict(modFit, testing)
+confusionMatrix(prediction, testing$classe)
+```
+The validation accuracy is 99.51% with an out-of-sample error of 0.49%. The 95% confidence interval lower bound indicates an expected 99.27% accuracy in predicting the exercise classification. 
+
+## Predict the test data set values
+```{r}
+results <- predict(modFit, test.raw)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(results)
+```
